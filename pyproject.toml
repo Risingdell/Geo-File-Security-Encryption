@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "higtlc"
+version = "0.1.0"
+description = "Hybrid Identity-Geographic Time-Locked Cryptosystem (prototype)"
+requires-python = ">=3.10"
+dependencies = ["pynacl>=1.5", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+higtlc = "higtlc.cli:main"
+
+[tool.setuptools]
+packages = ["higtlc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

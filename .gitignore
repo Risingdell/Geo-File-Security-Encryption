@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+lta_state/
+# private identity files and sealed/opened demo files
+*.id
+*.hig
