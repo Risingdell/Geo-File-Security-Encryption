@@ -87,13 +87,16 @@ class Store:
 
 
 def create_app(state_dir: str | Path, *, clock: Callable[[], float] = time.time,
-               dev_attestation: bool = False) -> FastAPI:
+               dev_attestation: bool = False, relay: bool = True) -> FastAPI:
     state_dir = Path(state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
     lta_sk = _load_or_create_key(state_dir)
     store = Store(state_dir / "lta.sqlite3")
     app = FastAPI(title="HIG-TLC Location-Time Authority")
     app.state.store = store
+    if relay:
+        from .relay import create_relay_router
+        app.include_router(create_relay_router(state_dir / "relay", clock))
 
     def purge_expired(now: float) -> None:
         expired = store.q("SELECT ticket FROM tickets WHERE not_after < ?", (int(now),))

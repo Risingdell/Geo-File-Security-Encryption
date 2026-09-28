@@ -54,6 +54,62 @@ higtlc open report.pdf.hig --id bob.id --sender alice.pub \
 ```
 
 Zones: `--circle LAT,LON,RADIUS_M` or `--polygon "LAT,LON;LAT,LON;LAT,LON"`.
+
+## Transferring a file between two people (HTTP or HTTPS)
+
+To see the whole flow on one machine (Alice, Bob and the server in separate folders), run:
+`powershell -ExecutionPolicy Bypass -File demo\two_person_demo.ps1` (add `-Scheme http` for plain HTTP).
+
+The server runs the **LTA** (holds `K_G`) and a **relay** (an untrusted mailbox that carries sealed
+files). The relay and the network only ever see ciphertext.
+
+```
+ Alice (sender)                    Server (LTA + relay)                 Bob (receiver)
+ seal: K_R → Bob's public key ──►  /v1/register  (K_G + policy)
+       file → XChaCha20        ──►  /v1/relay/files  (.hig upload)
+                                    /v1/relay/inbox  ◄── signed by Bob ── inbox / receive
+                                    /v1/relay/files/ID ──────────────────► download .hig
+                                                                          private key → K_R
+                                    /v1/release ◄── device location + ── evidence signed by Bob
+                                    checks zone + server clock ─── K_G ─► K_file = HKDF(K_R‖K_G)
+                                                                          file opens
+```
+
+**0. Server operator** (any machine both people can reach; use its LAN or public IP):
+```powershell
+higtlc tls-cert --host 192.168.1.5 --out certs            # HTTPS; skip for plain HTTP
+higtlc serve --host 0.0.0.0 --port 8765 --tls-cert certs/server.crt --tls-key certs/server.key
+```
+Give `certs/ca.crt` to both people. With plain HTTP, drop the `--tls-*` and `--ca` options and use `http://`.
+
+**1. Each person creates an identity once and swaps `.pub` files** (compare fingerprints by phone or in person):
+```powershell
+higtlc keygen --name bob --out bob.id        # Bob sends bob.pub to Alice
+higtlc keygen --name alice --out alice.id    # Alice sends alice.pub to Bob
+```
+
+**2. Bob finds the coordinates of the place where he'll open the file** (or Alice picks them from a map):
+```powershell
+higtlc locate
+```
+
+**3. Alice seals and sends:**
+```powershell
+higtlc seal plan.pdf --from alice.id --to bob.pub --ca ca.crt `
+    --lta https://192.168.1.5:8765 --circle 12.872323,74.940850,200 --max-accuracy 100 `
+    --not-after +2h --send
+```
+
+**4. Bob receives and opens.** His location is captured from the device automatically:
+```powershell
+higtlc inbox   --id bob.id --server https://192.168.1.5:8765 --ca ca.crt
+higtlc receive --id bob.id --server https://192.168.1.5:8765 --ca ca.crt `
+    --sender alice.pub --open --launch
+```
+
+Laptops without GPS get their position from Wi-Fi, usually with 50–150 m error. Choose `--circle`
+radius and `--max-accuracy` to suit (for example, 200 m / 100 m). Phones with GPS can use tighter
+values. Location services must be on (Windows: Settings → Privacy & security → Location).
 Times: `now`, `+30m`, `+2h`, `+1d`, a unix timestamp, or ISO 8601.
 
 Run the tests with `pytest`. They cover the happy path, wrong place, wrong time, expiry, wrong
@@ -66,7 +122,10 @@ and audit log, and show that a compromised LTA can't decrypt.
 |---|---|
 | [higtlc/container.py](higtlc/container.py) | `.hig` format, `seal_file` / `open_file` |
 | [higtlc/lta_server.py](higtlc/lta_server.py) | FastAPI LTA: `/v1/info`, `/v1/register`, `/v1/nonce`, `/v1/release` |
-| [higtlc/lta_client.py](higtlc/lta_client.py) | HTTP client for the LTA |
+| [higtlc/lta_client.py](higtlc/lta_client.py) | HTTP(S) clients for the LTA and the relay |
+| [higtlc/relay.py](higtlc/relay.py) | Relay: upload, signed inbox listing, download, delete |
+| [higtlc/location.py](higtlc/location.py) | Device location via the Windows location service |
+| [higtlc/tls.py](higtlc/tls.py) | Private CA + server certificate for HTTPS |
 | [higtlc/policy.py](higtlc/policy.py) | Policy schema, circle/polygon zone checks |
 | [higtlc/keys.py](higtlc/keys.py) | X25519 + Ed25519 identities, Argon2id-encrypted at rest |
 | [higtlc/util.py](higtlc/util.py) | Canonical JSON, HKDF, signed-message domains, time parsing |
@@ -76,7 +135,8 @@ and audit log, and show that a compromised LTA can't decrypt.
 
 This is a **prototype**. It hasn't been audited.
 
-- **Location is self-reported** (`--lat/--lon`). Real protection needs device attestation
+- **Location is self-reported.** It's read from the OS location service (or typed in with
+  `--lat/--lon`), and a modified client could report any position. Real protection needs device attestation
   (Play Integrity / App Attest) and ideally a **site beacon** that signs only after UWB
   distance bounding. The protocol checks both already. `--beacon-key` and `--dev-attestation` are
   **simulations**, and the LTA accepts stub attestations only when started with `--dev-attestation`.

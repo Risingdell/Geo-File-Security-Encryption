@@ -3,6 +3,9 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 lta_state/
+demo_run/
+received/
+certs/
 # private identity files and sealed/opened demo files
 *.id
 *.hig
